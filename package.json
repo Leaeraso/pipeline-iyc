@@ -1,14 +1,15 @@
 {
   "name": "pipeline",
   "version": "1.0.0",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node src/app.js",
     "lint": "eslint src/**/*.js",
     "format:check": "prettier --check",
-    "test:unit": "jest src/tests/unit/products.test.js",
-    "test:integration": "jest src/tests/integration/products.test.js",
-    "test:coverage": "jest --coverage"
+    "test:unit": "node --experimental-vm-modules node_modules/.bin/jest src/tests/unit/product.test.js",
+    "test:integration": "node --experimental-vm-modules node_modules/.bin/jest src/tests/integration/product.test.js",
+    "test:coverage": "node --experimental-vm-modules node_modules/.bin/jest --coverage"
   },
   "keywords": [],
   "author": "",
