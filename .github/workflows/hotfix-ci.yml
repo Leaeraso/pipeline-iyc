@@ -1,0 +1,193 @@
+# .github/workflows/hotfix-ci.yml
+# Hotfix CI/CD Pipeline
+# Este workflow maneja hotfixes y producción con GitHub Actions y Docker
+name: Hotfix CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - 'hotfix/*'
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+# Permisos necesarios para push a GHCR (packages) y lectura de repositorio
+permissions:
+  contents: read
+  packages: write
+
+env:
+  NODE_VERSION: '18'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  DOCKER_BUILDKIT: 1
+
+jobs:
+  # Job 1: Validación de código y calidad
+  code-quality:
+    name: Code Quality Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run Prettier check
+        run: npm run format:check
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Run integration tests
+        run: npm run test:integration
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v3
+        if: success()
+
+  # Job 2: Build & Docker image
+  build:
+    name: Build & Docker Image
+    runs-on: ubuntu-latest
+    needs: code-quality
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          build-args: |
+            NODE_ENV=production
+            VERSION=${{ github.sha }}
+
+  # Job 3: Deploy to Development (only hotfix branches)
+  deploy-dev:
+    name: Deploy to Development
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/heads/hotfix/')
+    environment: development
+    steps:
+      - name: Deploy to Dev environment
+        run: |
+          echo "🚀 Deploying hotfix to Development..."
+          echo "URL: https://dev.myapp.com"
+          echo "Using image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          # Aquí irían los comandos reales de despliegue (kubectl / docker run)
+
+      - name: Run smoke tests
+        run: |
+          echo "Running smoke tests on Dev..."
+          # curl -f https://dev.myapp.com/health || exit 1
+
+  # Job 4: Deploy to QA
+  deploy-qa:
+    name: Deploy to QA
+    runs-on: ubuntu-latest
+    needs: deploy-dev
+    if: startsWith(github.ref, 'refs/heads/hotfix/')
+    environment: qa
+    steps:
+      - name: Deploy to QA environment
+        run: |
+          echo "🚀 Deploying to QA..."
+          echo "URL: https://qa.myapp.com"
+          echo "Using image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+      - name: Run E2E tests
+        run: |
+          echo "Running end-to-end tests on QA..."
+          # npm run test:e2e:qa
+
+  # Job 5: Deploy to Staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: deploy-qa
+    if: startsWith(github.ref, 'refs/heads/hotfix/')
+    environment: staging
+    steps:
+      - name: Deploy to Staging environment
+        run: |
+          echo "🚀 Deploying to Staging..."
+          echo "URL: https://staging.myapp.com"
+          echo "Using image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+      - name: Run regression tests
+        run: |
+          echo "Running regression tests..."
+          # npm run test:regression
+      - name: Run load tests
+        run: |
+          echo "Running basic load tests..."
+          # npm run test:load
+
+  # Job 6: Deploy to Production (only main branch)
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: production
+      url: https://myapp.com
+    steps:
+      - name: Deploy to Production
+        run: |
+          VERSION=$(date '+%Y.%m.%d-%H%M')
+          echo "🚀 Deploying Hotfix $VERSION to Production..."
+          echo "URL: https://myapp.com"
+          echo "Using image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          # Aquí irían los comandos reales de despliegue (docker/k8s)
+
+      - name: Run health check
+        run: |
+          echo "Checking application health..."
+          # curl -f https://myapp.com/health || exit 1
+
+      - name: Notify team
+        run: |
+          echo "✅ Hotfix deployed successfully"
+
+  # Job 7: Rollback if production fails
+  rollback:
+    name: Automatic Rollback
+    runs-on: ubuntu-latest
+    needs: deploy-production
+    if: failure() && github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - name: Rollback deployment
+        run: |
+          echo "⚠️ Deployment failed. Executing rollback..."
+          # Comandos para volver a la versión anterior
+      - name: Notify failure
+        run: |
+          echo "🚨 ALERT: Hotfix failed - rollback executed"
