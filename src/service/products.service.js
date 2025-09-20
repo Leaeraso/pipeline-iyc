@@ -9,6 +9,7 @@ export async function getProducts() {
         const data = await res.json()
         return data
     } catch (error) {
+        console.error(error);
         throw new Error('Error fetching products')
     }
 }
